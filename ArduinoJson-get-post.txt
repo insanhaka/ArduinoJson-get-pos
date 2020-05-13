@@ -1,0 +1,163 @@
+#include <ArduinoJson.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h> 
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
+
+#ifndef STASSID
+#define STASSID "Gak Modal"
+#define STAPSK  ""
+#endif
+
+const char* ssid     = STASSID;
+const char* password = STAPSK;
+
+//const char* host = "djxmmx.net";
+//const uint16_t port = 17;
+
+int dataku, device;
+
+void setup() {
+  Serial.begin(115200);
+
+  // We start by connecting to a WiFi network
+
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
+     would try to act as both a client and an access-point and could cause
+     network-issues with your other WiFi-devices on your WiFi-network. */
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+void postData() {
+  //=============== PROGRAM POST DATA TO SERVER===========
+  //======================================================
+
+  // Prepare JSON document
+  DynamicJsonDocument doc(2048);
+  doc["nama"] = "Ruang Tamu";
+  doc["kondisi"] = dataku;
+  doc["nomor"] = 1;
+  
+  // Serialize JSON document
+  String json;
+//  serializeJson(doc, json);
+  serializeJsonPretty(doc, json);
+//  Serial.println(json);
+  
+  HTTPClient http;
+
+ // Send request
+  http.begin("http://192.168.43.75:8000/api/postlampu");
+  http.addHeader("Content-Type", "application/json");
+  http.POST(json);
+  
+ // Read response
+  Serial.println(http.getString());
+  
+  // Disconnect
+   http.end();
+  
+}
+
+
+void getdata() {
+  
+  // Use WiFiClient class to create TCP connections
+  WiFiClient client;
+  if (!client.connect("192.168.43.75", 8000)) {
+    Serial.println("connection failed");
+    delay(5000);
+    return;
+  }
+
+  //==================PROGRAM GET DATA FROM API===========
+  //======================================================
+
+  // Send HTTP request
+  client.println(F("GET /api/data-lampu HTTP/1.0"));
+  client.println(F("Host: 192.168.43.75"));
+  client.println(F("Connection: close"));
+  if (client.println() == 0) {
+    Serial.println(F("Failed to send request"));
+    return;
+  }
+
+  // Check HTTP status
+  char status[32] = {0};
+  client.readBytesUntil('\r', status, sizeof(status));
+  // It should be "HTTP/1.0 200 OK" or "HTTP/1.1 200 OK"
+  if (strcmp(status + 9, "200 OK") != 0) {
+    Serial.print(F("Unexpected response: "));
+    Serial.println(status);
+    return;
+  }
+
+  // Skip HTTP headers
+  char endOfHeaders[] = "\r\n\r\n";
+  if (!client.find(endOfHeaders)) {
+    Serial.println(F("Invalid response"));
+    return;
+  }
+
+  // Allocate the JSON document
+  // Use arduinojson.org/v6/assistant to compute the capacity.
+  DynamicJsonDocument doc(1024);
+  doc.capacity();
+
+  // Parse JSON object
+  DeserializationError error = deserializeJson(doc, client);
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Extract values
+//  Serial.println(F("Response:"));
+//  Serial.println(doc["sensor"].as<char*>());
+//  Serial.println(doc["time"].as<long>());
+  Serial.println(doc["dataLampu"][0]["nama"].as<String>());
+  Serial.println(doc["dataLampu"][0]["kondisi"].as<int>());
+  Serial.println(doc["dataLampu"][0]["nomor"].as<int>());
+//  Serial.println(doc["data"][1].as<float>(), 6);
+
+  dataku = doc["dataLampu"][0]["kondisi"].as<int>();
+  device = doc["dataLampu"][0]["nomor"].as<int>();
+
+  if(dataku == 1){
+//    Serial.println("Lampunya Nyala");
+  }else {
+//    Serial.println("Lampunya Mati");
+  }
+
+  // Disconnect
+  client.stop();
+  
+}
+
+
+void loop() {
+
+  getdata();
+  postData();
+  
+  delay(3000);  //Post Data at every 1 seconds
+  
+}
